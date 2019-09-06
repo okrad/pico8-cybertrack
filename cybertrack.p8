@@ -4,9 +4,10 @@ __lua__
 
 STATE_INTRO = 1
 STATE_PLAYER_SELECTION = 2
-STATE_COUNTDOWN = 3
+STATE_LEVEL_START = 3
 STATE_RUNNING = 4
-STATE_GAMEOVER = 5
+STATE_LEVEL_COMPLETE = 5
+STATE_GAMEOVER = 6
 
 ORIENTATION_HORIZONTAL = 1
 ORIENTATION_VERTICAL = -1
@@ -18,19 +19,16 @@ DEBUG = true
 
 function _init()
 
+	players = {}
 	gameState = STATE_INTRO
 	countdowncycles = 0
 	countdown = 0
+	level = 0
 
 	world = {
 		width = 500,
 		height = 500
 	}
-
-	speed = 2
-	trackidx = 1
-
-	generate_track()
 
 end
 
@@ -50,25 +48,66 @@ function _update()
 		if(btnp(4)) then
 
 			create_players()
+			next_level()
 
-			gameState = STATE_COUNTDOWN
+			gameState = STATE_LEVEL_START
 		end
 
-	elseif(gameState == STATE_COUNTDOWN) then
+	elseif(gameState == STATE_LEVEL_START) then
 
 		inccountdown()
 		if(countdown > 2) gameState = STATE_RUNNING
+
+	elseif(gameState == STATE_LEVEL_COMPLETE) then
+
+		if(countdown > 2) then
+			next_level()
+			gameState = STATE_LEVEL_START
+		else
+			inccountdown()
+		end
 
 	elseif(gameState == STATE_RUNNING) then
 
 		if(countdown < 4) inccountdown()
 
-		for i = 1, #players do
-			update_player_state(i - 1)
+		if(trackidx < #track) then
+			for i = 1, #players do
+				update_player_state(i - 1)
+			end
+			trackidx += speed
+		else
+			countdowncycles = 0
+			countdown = 0
+			gameState = STATE_LEVEL_COMPLETE
 		end
 
-		trackidx += speed
 	end
+end
+
+function next_level()
+
+	level += 1
+
+	countdowncycles = 0
+	countdown = 0
+
+	-- tracksegments = 20
+	tracksegments = 50
+	speed = 2 + flr(level * .2)
+	minsegmentlen =  flr(1 + 30  / (level * .2))
+	maxsegmentlen =  flr(1 + 50  / (level * .2))
+	trackidx = 1
+
+	for p in all(players) do
+		p.camera.x = p.camera.orig_x
+		p.camera.y = p.camera.orig_y
+
+		p.x = world.width / 2
+		p.y = world.height / 2
+	end
+
+	generate_track()
 end
 
 function update_player_state(pn)
@@ -219,28 +258,51 @@ function create_players()
 
 	end
 
+	for p in all(players) do
+		p.camera.orig_x = p.camera.x
+		p.camera.orig_y = p.camera.y
+	end
+
 end
 
 function _draw()
 	cls()
 
 	if(gameState == STATE_INTRO) then
+
 		draw_intro()
+
 	elseif(gameState == STATE_PLAYER_SELECTION) then
+
 		draw_players_menu()
-	elseif(gameState == STATE_COUNTDOWN) then
-		draw_border()
+
+	elseif(gameState == STATE_LEVEL_START) then
+
 		draw_track()
-		draw_player()
-		draw_countdown()
-	elseif(gameState == STATE_RUNNING) then
-		if(countdown < 4) draw_countdown()
 		draw_border()
-		draw_track()
 		draw_player()
 		draw_score()
-		debug()
+		draw_countdown()
+
+	elseif(gameState == STATE_RUNNING) then
+
+		if(countdown < 4) draw_countdown()
+		draw_track()
+		draw_border()
+		draw_player()
+		draw_score()
+
+	elseif(gameState == STATE_LEVEL_COMPLETE) then
+
+		draw_track()
+		draw_border()
+		draw_player()
+		draw_score()
+		draw_level_complete()
+
 	end
+
+	debug()
 
 end
 
@@ -261,11 +323,17 @@ end
 
 function draw_countdown()
 
+	print('level ' .. level, 40, 38, 7)
+
 	if(countdown < 3) then
 		print('ready in ' .. 3 - countdown .. '...', 40, 50, 7)
 	else
 		print('go!', 50, 50, 7)
 	end
+end
+
+function draw_level_complete()
+	print('level ' .. level .. ' complete!', 30, 38, 7)
 end
 
 function draw_border()
@@ -350,8 +418,10 @@ function debug()
 
 			p = players[pn]
 
-			print('P' .. pn .. ': ' .. p.x .. ', ' .. p.y .. ' - C: ' .. p.camera.x .. ', ' .. p.camera.y, 0, 116 + (pn - 1) * 4, 7)
+			print('P' .. pn .. ': ' .. p.x .. ', ' .. p.y .. ' - C: ' .. p.camera.x .. ', ' .. p.camera.y, 0, 112 + pn * 4, 7)
 		end
+
+		print('STATE: ' .. gameState, 0, 110, 7)
 	end
 end
 
@@ -359,12 +429,12 @@ function generate_track()
 
 	track = {}
 
-	local x, y, totsegments = flr(world.width / 2), flr(world.height / 2), 100
+	local x, y = flr(world.width / 2), flr(world.height / 2)
 	local orientation = ORIENTATION_VERTICAL
 	local dirx, diry = 1, 0
 	local i
 
-	for i = 0, totsegments do
+	for i = 0, tracksegments do
 
 		if(orientation == ORIENTATION_HORIZONTAL) then
 			dirx = 0
@@ -395,7 +465,6 @@ end
 function generate_path(x, y, dirx, diry)
 
 	local i
-	local minsegmentlen, maxsegmentlen = 50, 100
 	local segmentlen
 
 	segmentlen = minsegmentlen + rnd(maxsegmentlen - minsegmentlen)
